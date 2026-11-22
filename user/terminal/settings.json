@@ -1,0 +1,7 @@
+{
+    "profiles": {
+        "defaults": {
+            "historySize": 32767
+        }
+    }
+}

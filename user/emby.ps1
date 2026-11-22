@@ -7,22 +7,20 @@
 
 Assert-NotAdmin
 
-# Vendor downloads are hash-pinned: download the current Windows installer from
-# https://emby.media/download.html into redist\, Get-FileHash it, then paste the SHA256 and the
-# exact URL below and re-run.
-$url = '<EMBY_INSTALLER_URL>'
-$sha = '<EMBY_SHA256>'
-if ($sha -like '<*>' -or $url -like '<*>') {
-    Write-Warn 'Pin the Emby Server installer URL and SHA256 in user\emby.ps1 before use. Skipping.'
-    return
-}
+# The link behind "Download" on https://emby.media/windows-server.html. The release number in
+# it changes with major versions; update it from that page if the download fails.
+$url = 'https://embydata.com/downloads/server/release14/setup.exe'
 
 if (Test-Path (Join-Path $env:APPDATA 'Emby-Server\system\EmbyServer.exe')) {
     Write-Info 'Emby Server already installed.'
 } else {
-    $inst = Get-Redist $url (Join-Path $KitRoot 'redist\emby-server.exe') $sha
-    Write-Info 'Installing Emby Server (silent)...'
-    Start-Process -FilePath $inst -ArgumentList '/S' -Wait
+    $inst = Save-Installer $url
+    try {
+        Write-Info 'Starting the Emby Server installer. Follow its window.'
+        Start-Process -FilePath $inst -Wait
+    } finally {
+        Remove-Item $inst -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $code = Invoke-Elevated -ScriptPath (Join-Path $KitRoot 'system\emby-firewall.ps1')

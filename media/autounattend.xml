@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
-	<!--https://schneegans.de/windows/unattend-generator/?LanguageMode=Unattended&UILanguage=en-US&Locale=en-US&Keyboard=00000409&GeoLocation=244&ProcessorArchitecture=amd64&PEMode=Default&WindowsEditionMode=Generic&WindowsEdition=pro&ComputerNameMode=Custom&ComputerName=KIT-HOSTNAME&TimeZoneMode=Explicit&TimeZone=UTC&UserAccountMode=Unattended&AccountName0=KITADMIN&AccountDisplayName0=KITADMINDISPLAY&AccountPassword0=KITADMINPW&AccountGroup0=Administrators&AccountName1=KITUSER&AccountDisplayName1=KITUSERDISPLAY&AccountPassword1=KITUSERPW&AccountGroup1=Users&AutoLogonMode=Own&ObscurePasswords=true&PasswordExpirationMode=Unlimited&LockoutMode=Default&HideFiles=Hidden&TaskbarSearch=Box&TaskbarIconsMode=Default&StartTilesMode=Default&StartPinsMode=Default&EnableLongPaths=true&DisableFastStartup=true&AllowPowerShellScripts=true&PreventDeviceEncryption=true&EffectsMode=Default&DesktopIconsMode=Default&StartFoldersMode=Default&CoreIsolationMode=Enabled&WifiMode=Skip&ExpressSettings=DisableAll&LockKeysMode=Skip&StickyKeysMode=Default&ColorMode=Default&WallpaperMode=Default&LockScreenMode=Default&AppLockerMode=Skip&SystemScriptType0=Reg&SystemScript0=Windows+Registry+Editor+Version+5.00%0A%0A%5BHKEY_LOCAL_MACHINE%5CSYSTEM%5CCurrentControlSet%5CControl%5CFileSystem%5D%0A%22NtfsDisable8dot3NameCreation%22%3Ddword%3A00000001%0A%0A%5BHKEY_LOCAL_MACHINE%5CSYSTEM%5CCurrentControlSet%5CControl%5CTimeZoneInformation%5D%0A%22RealTimeIsUniversal%22%3Ddword%3A00000001%0A%0A%5BHKEY_LOCAL_MACHINE%5CSOFTWARE%5CPolicies%5CMicrosoft%5CFVE%5D%0A%22EncryptionMethodWithXtsOs%22%3Ddword%3A00000007%0A%22EncryptionMethodWithXtsFdv%22%3Ddword%3A00000007%0A%22EncryptionMethodWithXtsRdv%22%3Ddword%3A00000007%0A%22UseAdvancedStartup%22%3Ddword%3A00000001%0A%22EnableBDEWithNoTPM%22%3Ddword%3A00000000%0A%22UseTPM%22%3Ddword%3A00000002%0A%22UseTPMPIN%22%3Ddword%3A00000002%0A%22UseTPMKey%22%3Ddword%3A00000002%0A%22UseTPMKeyPIN%22%3Ddword%3A00000002%0A-->
+	<!--https://schneegans.de/windows/unattend-generator/?LanguageMode=Unattended&UILanguage=en-US&Locale=en-US&Keyboard=00000409&GeoLocation=244&ProcessorArchitecture=amd64&PEMode=Default&WindowsEditionMode=Generic&WindowsEdition=pro&ComputerNameMode=Random&TimeZoneMode=Implicit&UserAccountMode=InteractiveLocal&PasswordExpirationMode=Unlimited&LockoutMode=Default&HideFiles=Hidden&TaskbarSearch=Box&TaskbarIconsMode=Default&StartTilesMode=Default&StartPinsMode=Default&EnableLongPaths=true&DisableFastStartup=true&AllowPowerShellScripts=true&PreventDeviceEncryption=true&EffectsMode=Default&DesktopIconsMode=Default&StartFoldersMode=Default&CoreIsolationMode=Enabled&WifiMode=Skip&ExpressSettings=DisableAll&LockKeysMode=Skip&StickyKeysMode=Default&ColorMode=Default&WallpaperMode=Default&LockScreenMode=Default&AppLockerMode=Skip-->
 	<settings pass="offlineServicing"></settings>
 	<settings pass="windowsPE">
 		<component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
@@ -19,10 +19,6 @@
 	</settings>
 	<settings pass="generalize"></settings>
 	<settings pass="specialize">
-		<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-			<ComputerName>KIT-HOSTNAME</ComputerName>
-			<TimeZone>UTC</TimeZone>
-		</component>
 		<component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
 			<RunSynchronous>
 				<RunSynchronousCommand wcm:action="add">
@@ -46,42 +42,11 @@
 			<UserLocale>en-US</UserLocale>
 		</component>
 		<component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-			<UserAccounts>
-				<LocalAccounts>
-					<LocalAccount wcm:action="add">
-						<Name>KITADMIN</Name>
-						<DisplayName>KITADMINDISPLAY</DisplayName>
-						<Group>Administrators</Group>
-						<Password>
-							<Value>SwBJAFQAQQBEAE0ASQBOAFAAVwBQAGEAcwBzAHcAbwByAGQA</Value>
-							<PlainText>false</PlainText>
-						</Password>
-					</LocalAccount>
-					<LocalAccount wcm:action="add">
-						<Name>KITUSER</Name>
-						<DisplayName>KITUSERDISPLAY</DisplayName>
-						<Group>Users</Group>
-						<Password>
-							<Value>SwBJAFQAVQBTAEUAUgBQAFcAUABhAHMAcwB3AG8AcgBkAA==</Value>
-							<PlainText>false</PlainText>
-						</Password>
-					</LocalAccount>
-				</LocalAccounts>
-			</UserAccounts>
-			<AutoLogon>
-				<Username>KITADMIN</Username>
-				<Enabled>true</Enabled>
-				<LogonCount>1</LogonCount>
-				<Password>
-					<Value>SwBJAFQAQQBEAE0ASQBOAFAAVwBQAGEAcwBzAHcAbwByAGQA</Value>
-					<PlainText>false</PlainText>
-				</Password>
-			</AutoLogon>
 			<OOBE>
 				<ProtectYourPC>3</ProtectYourPC>
 				<HideEULAPage>true</HideEULAPage>
 				<HideWirelessSetupInOOBE>true</HideWirelessSetupInOOBE>
-				<HideOnlineAccountScreens>false</HideOnlineAccountScreens>
+				<HideOnlineAccountScreens>true</HideOnlineAccountScreens>
 			</OOBE>
 			<FirstLogonCommands>
 				<SynchronousCommand wcm:action="add">
@@ -115,26 +80,6 @@ foreach( $file in $Document.unattend.Extensions.File ) {
     [System.IO.File]::WriteAllBytes( $path, $bytes );
 }
 		</ExtractScript>
-		<File path="C:\Windows\Setup\Scripts\unattend-01.reg">
-Windows Registry Editor Version 5.00
-
-[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem]
-"NtfsDisable8dot3NameCreation"=dword:00000001
-
-[HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\TimeZoneInformation]
-"RealTimeIsUniversal"=dword:00000001
-
-[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\FVE]
-"EncryptionMethodWithXtsOs"=dword:00000007
-"EncryptionMethodWithXtsFdv"=dword:00000007
-"EncryptionMethodWithXtsRdv"=dword:00000007
-"UseAdvancedStartup"=dword:00000001
-"EnableBDEWithNoTPM"=dword:00000000
-"UseTPM"=dword:00000002
-"UseTPMPIN"=dword:00000002
-"UseTPMKey"=dword:00000002
-"UseTPMKeyPIN"=dword:00000002
-		</File>
 		<File path="C:\Windows\Setup\Scripts\Specialize.ps1">
 $scripts = @(
 	{
@@ -151,9 +96,6 @@ $scripts = @(
 	};
 	{
 		reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\BitLocker" /v "PreventDeviceEncryption" /t REG_DWORD /d 1 /f;
-	};
-	{
-		reg.exe import "C:\Windows\Setup\Scripts\unattend-01.reg";
 	};
 );
 
@@ -175,9 +117,6 @@ $scripts = @(
 		</File>
 		<File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
 $scripts = @(
-	{
-		Set-ItemProperty -LiteralPath 'Registry::HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'AutoLogonCount' -Type 'DWord' -Force -Value 0;
-	};
 	{
 		Remove-Item -LiteralPath @(
 		  'C:\Windows\Panther\unattend.xml';

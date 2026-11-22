@@ -1,8 +1,9 @@
 #Requires -Version 5.1
-# Copy the checked-in VS Code settings.json into the user's Code profile.
+# Merge the checked-in VS Code settings into the user's settings.json. Settings changed in
+# VS Code that the kit does not name are kept; the file is created when missing.
 . (Join-Path $PSScriptRoot '..\..\common.ps1')
 
-$dest = Join-Path $env:APPDATA 'Code\User'
-if (-not (Test-Path $dest)) { New-Item $dest -ItemType Directory -Force | Out-Null }
-Copy-Item -Force (Join-Path $PSScriptRoot 'settings.json') (Join-Path $dest 'settings.json')
-Write-Info "VS Code settings.json installed to $dest"
+Assert-NotAdmin
+
+Set-JsonSettings -Path (Join-Path $env:APPDATA 'Code\User\settings.json') `
+                 -Settings (Join-Path $PSScriptRoot 'settings.json')

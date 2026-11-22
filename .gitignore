@@ -1,11 +1,6 @@
-# Downloaded, hash-pinned redistributables (winget deps, installers).
-/redist/*
-!/redist/.gitignore
-
 # Never commit secrets or exported recovery material.
-*-recovery.txt
 *.bek
-# Kit ISOs built for VM testing contain the account passwords.
+# Kit ISOs built for VM testing.
 *.iso
 
 # Noise

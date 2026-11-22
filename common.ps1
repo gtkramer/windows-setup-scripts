@@ -6,28 +6,22 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'   # stop on the first error (fail fast)
 
 # --- Host constants (edit these to fork) -------------------------------------
-$UserName         = 'george'                   # daily account: standard user, Microsoft account
-$DisplayName      = 'George Kramer'
-$AdminName        = "ad_$UserName"             # local administrator: elevation + break-glass
-$AdminDisplayName = "$DisplayName (admin)"
-$GitName          = $DisplayName
-$GitEmail         = 'george.kramer@live.com'
-$GitEditor        = 'vim'                      # the Vim bundled with Git for Windows
-$TimeZoneId       = 'Pacific Standard Time'    # Windows id for America/Los_Angeles
-$HostName         = 'prowsw880acese'
-$TrustedLanCidr   = '192.168.1.0/24'
-$SystemDrive      = 'C:'
+$HostName       = 'prowsw880acese'            # applied by system\machine.ps1; takes effect after a restart
+$TimeZoneId     = 'Pacific Standard Time'     # Windows id for America/Los_Angeles
+$GitName        = 'George Kramer'
+$GitEmail       = 'george.kramer@live.com'
+$GitEditor      = 'vim'                       # the Vim bundled with Git for Windows
+$TrustedLanCidr = '192.168.1.0/24'
+$SystemDrive    = 'C:'
 # MakeMKV's AACS KEYDB.cfg source of truth (copied to %APPDATA%\aacs by makemkv.ps1).
-$KeyDbSource      = Join-Path $env:USERPROFILE 'Documents\MakeMKV\KEYDB.cfg'
+$KeyDbSource    = Join-Path $env:USERPROFILE 'Documents\MakeMKV\KEYDB.cfg'
 
 # --- Kit constants -----------------------------------------------------------
-$KitRoot   = $PSScriptRoot
-$KitLogDir = Join-Path $env:ProgramData 'windows-setup-scripts\logs'
+$KitRoot = $PSScriptRoot
 
 # Silence the auto-var lint: these are the fork's public API, consumed by modules.
-$null = $UserName, $DisplayName, $AdminName, $AdminDisplayName, $GitName, $GitEmail,
-        $GitEditor, $TimeZoneId, $HostName, $TrustedLanCidr, $SystemDrive, $KeyDbSource,
-        $KitRoot, $KitLogDir
+$null = $HostName, $TimeZoneId, $GitName, $GitEmail, $GitEditor, $TrustedLanCidr,
+        $SystemDrive, $KeyDbSource, $KitRoot
 
 # --- Error + privilege helpers ----------------------------------------------
 function Write-Info {
@@ -47,98 +41,60 @@ function Test-Admin {
 }
 
 function Assert-Admin {
-    if (-not (Test-Admin)) { Die 'This part must run elevated. Start the kit script as yourself; it elevates on its own.' }
+    if (-not (Test-Admin)) { Die 'This part must run elevated. Start the kit script from a normal (not elevated) terminal; it elevates on its own.' }
 }
 
 function Assert-NotAdmin {
-    # Per-user work (Store apps, per-user installs, app config) must run as the daily user:
-    # elevated, it would land in the administrator account's profile.
-    if (Test-Admin) { Die "Run this as your standard account ($UserName), not elevated. It elevates on its own when needed." }
+    # Per-user work (Store apps, per-user installs, app config) must run unelevated. With
+    # Administrator protection on, an elevated process runs in a separate hidden profile, so
+    # anything per-user done there would land in the wrong place.
+    if (Test-Admin) { Die 'Run this from a normal (not elevated) terminal. It elevates on its own when needed.' }
 }
 
 # --- Elevation: one elevated child through Windows' own "run as administrator" prompt ---
 function Invoke-Elevated {
-    # Launches $ScriptPath elevated in Windows PowerShell 5.1 and waits for it. The child runs as
-    # the administrator whose credentials are typed at the prompt, so it is told which user it
-    # is working for. Its transcript is mirrored into this window. Returns the child's exit code.
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
-        Justification = 'Mirrors the elevated transcript to the console.')]
+    # Launches $ScriptPath elevated in Windows PowerShell 5.1, in its own window, and waits for
+    # it. The elevated process may run in a different profile than yours, so it is told which
+    # user it is working for. Returns the child's exit code.
     param(
         [Parameter(Mandatory)][string]$ScriptPath,
         [string[]]$ArgumentList = @()
     )
-    if (-not (Test-Path $KitLogDir)) { New-Item $KitLogDir -ItemType Directory -Force | Out-Null }
     $name = [IO.Path]::GetFileNameWithoutExtension($ScriptPath)
-    $log  = Join-Path $KitLogDir ('{0}-{1:yyyyMMdd-HHmmss}.log' -f $name, (Get-Date))
-    $sid  = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 
     # -ArgumentList is joined with spaces and not quoted for us, so quote the paths here.
     $childArgs = @(
         '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$ScriptPath`"",
-        '-TargetUser', "`"$env:USERNAME`"", '-TargetSid', $sid, '-LogPath', "`"$log`""
+        '-TargetUser', "`"$env:USERNAME`""
     ) + $ArgumentList
 
-    Write-Info "Elevating: $name (enter the $AdminName password at the prompt)"
+    Write-Info "Elevating: $name. Approve the prompt; the elevated part runs in a second window."
     try {
         $proc = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
             -Verb RunAs -PassThru -ArgumentList $childArgs
-    } catch [ComponentModel.Win32Exception] {
+    } catch {
         Die "Elevation was cancelled or refused: $($_.Exception.Message)"
     }
     $null = $proc.Handle   # keep the handle so ExitCode is readable after exit
-
-    $position = 0L
-    do {
-        $done = $proc.HasExited
-        if (Test-Path $log) {
-            $stream = [IO.File]::Open($log, 'Open', 'Read', 'ReadWrite')
-            try {
-                $null   = $stream.Seek($position, 'Begin')
-                $reader = New-Object IO.StreamReader($stream)
-                $text   = $reader.ReadToEnd()
-                $position = $stream.Position
-                if ($text) { Write-Host $text -NoNewline }
-            } finally { $stream.Dispose() }
-        }
-        if (-not $done) { Start-Sleep -Milliseconds 500 }
-    } until ($done)
-
-    Write-Info "Elevated log: $log"
+    $proc.WaitForExit()    # this process only; installers may leave helpers running
     return $proc.ExitCode
 }
 
 function Enter-Elevated {
-    # First call in every elevated script. Checks the token, checks that the target user the
-    # unelevated half named really is that account, and starts the transcript the parent mirrors.
-    param([string]$TargetUser, [string]$TargetSid, [string]$LogPath)
+    # First call in every elevated script: checks the token and records the user it works for.
+    param([string]$TargetUser)
     Assert-Admin
-    if ($TargetSid -notmatch '^S-1-5-21-\d+-\d+-\d+-\d+$') { Die "Target account id is missing or malformed: '$TargetSid'" }
-    try {
-        $account = ([Security.Principal.SecurityIdentifier]$TargetSid).Translate([Security.Principal.NTAccount]).Value
-    } catch { Die "Target account id $TargetSid does not resolve to an account on this PC." }
-    if (($account -split '\\')[-1] -ne $TargetUser) { Die "Target account id resolves to $account, not $TargetUser." }
-    if ($LogPath) { Start-Transcript -Path $LogPath -Append | Out-Null }
+    if (-not $TargetUser) { Die 'No target user. Start the kit script from a normal terminal; it elevates on its own.' }
     $global:KitTargetUser = $TargetUser
-    $global:KitTargetSid  = $TargetSid
     Write-Info "Elevated as $env:USERNAME, working for $TargetUser."
 }
 
 function Exit-Elevated {
-    # Last call in every elevated script: stop the transcript and return the exit code.
+    # Last call in every elevated script. Nothing is logged to disk, so the window stays open
+    # until you have read it.
     param([int]$Code = 0)
-    try { Stop-Transcript | Out-Null } catch { $null = $_ }
+    $null = Read-Host 'Press Enter to close this window'
     exit $Code
-}
-
-function Get-TargetUserKey {
-    # Registry path of the daily user's hive as seen from the elevated child, where HKCU is
-    # the administrator's hive. The hive is loaded while that user is signed in.
-    param([Parameter(Mandatory)][string]$SubKey)
-    $sid = Get-Variable -Name KitTargetSid -Scope Global -ValueOnly -ErrorAction SilentlyContinue
-    if (-not $sid) { Die 'No target user: this module runs only from an elevated kit script.' }
-    $root = "Registry::HKEY_USERS\$sid"
-    if (-not (Test-Path $root)) { Die "The profile of the target user is not loaded (is that account signed in?)." }
-    return "$root\$SubKey"
 }
 
 # --- Idempotent primitives ---------------------------------------------------
@@ -164,31 +120,39 @@ function Get-RegValue {
     catch { return $null }
 }
 
-function Get-Redist {
-    # Download + SHA256 verify. Skips the download if the file already exists; verifies the
-    # hash every run when one is given.
+function Save-Installer {
+    # Downloads a vendor installer over HTTPS to the temp folder and returns its path. The
+    # caller runs it and deletes it; nothing is kept in the kit.
+    param([Parameter(Mandatory)][string]$Uri)
+    if ($Uri -notmatch '^https://') { Die "Refusing a download that is not HTTPS: $Uri" }
+    $file = Join-Path $env:TEMP ([IO.Path]::GetFileName(([uri]$Uri).AbsolutePath))
+    Write-Info "Downloading $(Split-Path $file -Leaf)..."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $prev = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'  # faster IWR
+    try   { Invoke-WebRequest -Uri $Uri -OutFile $file -UseBasicParsing }
+    finally { $ProgressPreference = $prev }
+    return $file
+}
+
+function Set-JsonSettings {
+    # Merges the values in the kit's $Settings file into the JSON file at $Path, keeping
+    # everything else already there, and creates the file when it is missing. The merge runs in
+    # PowerShell 7 (user\Merge-JsonSettings.ps1): Windows PowerShell 5.1 cannot read JSON with
+    # comments and truncates nested values.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Deliberately plural: merges a set of settings.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Thin wrapper; the merge script reports what it wrote.')]
     param(
-        [Parameter(Mandatory)][string]$Uri,
-        [Parameter(Mandatory)][string]$OutFile,
-        [string]$Sha256
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Settings
     )
-    $dir = Split-Path $OutFile
-    if ($dir -and -not (Test-Path $dir)) { New-Item $dir -ItemType Directory -Force | Out-Null }
-    if (-not (Test-Path $OutFile)) {
-        Write-Info "Downloading $(Split-Path $OutFile -Leaf)..."
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-        $prev = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'  # faster IWR
-        try   { Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing }
-        finally { $ProgressPreference = $prev }
+    if (-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+        Write-Warn "PowerShell 7 (pwsh) is not on PATH yet, so $Path was left alone. Open a new terminal and re-run user\Install.ps1."
+        return
     }
-    if ($Sha256) {
-        $actual = (Get-FileHash $OutFile -Algorithm SHA256).Hash
-        if ($actual -ne $Sha256.ToUpper()) {
-            Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
-            Die "Hash mismatch for $OutFile`n  expected $($Sha256.ToUpper())`n  actual   $actual"
-        }
-    }
-    return $OutFile
+    pwsh -NoProfile -File (Join-Path $KitRoot 'user\Merge-JsonSettings.ps1') -Path $Path -Settings $Settings
+    if ($LASTEXITCODE -ne 0) { Write-Warn "Settings were not merged into $Path (see the message above)." }
 }
 
 # --- Package wrappers --------------------------------------------------------
@@ -202,14 +166,14 @@ function Get-AppList {
 }
 
 function Assert-Winget {
-    # winget is registered per user at first sign-in. For an account that has barely signed in
-    # (the administrator), register App Installer for it and re-check.
+    # winget is registered per user at first sign-in. The elevated part can run in a profile
+    # that has never signed in, so register App Installer for it and re-check.
     if (Get-Command winget -ErrorAction SilentlyContinue) { return }
     try { Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -ErrorAction Stop }
     catch { Write-Warn "Could not register App Installer for $env:USERNAME`: $($_.Exception.Message)" }
     $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Die "winget is not available for $env:USERNAME. Sign in to that account once, let the Store update App Installer, and re-run."
+        Die "winget is not available for $env:USERNAME. If this is the elevated window, see the README (Risks: winget under Administrator protection)."
     }
 }
 

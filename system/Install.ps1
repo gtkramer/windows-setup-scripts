@@ -1,21 +1,21 @@
 #Requires -Version 5.1
 # Elevated half of Install.ps1. Launched by it through Invoke-Elevated; not run by hand.
 # Machine-wide state only. Anything per-user belongs in user\Install.ps1.
-param([string]$TargetUser, [string]$TargetSid, [string]$LogPath)
+param([string]$TargetUser)
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
 $code = 0
 try {
-    Enter-Elevated -TargetUser $TargetUser -TargetSid $TargetSid -LogPath $LogPath
+    Enter-Elevated -TargetUser $TargetUser
     Assert-Winget
     Invoke-Modules -BaseDir $PSScriptRoot -Name @(
-        'policy'      # telemetry, activity, Windows Update restart, Edge
-        'hardening'   # six settings from Microsoft's security baseline
+        'machine'     # computer name, time zone, UTC clock, 8.3 names, Developer Mode
+        'accounts'    # Administrator protection, no security-question password reset
+        'policy'      # telemetry, Windows Update restart, Edge
+        'hardening'   # four settings from Microsoft's security baseline
         'defender'    # Defender on, plus low-friction extras
         'onedrive'    # block OneDrive by policy (the user half uninstalls it)
-        'developer'   # Hyper-V Administrators membership, Developer Mode
         'apps'        # machine-wide winget apps
-        'tresorit'    # vendor installer (skips until its hash is pinned)
         'debloat'     # Win11Debloat: maintainer's defaults minus the kit's exceptions (last: it
                       # depends on a download, and must not hold up the modules above)
     )

@@ -6,6 +6,5 @@
 Assert-Admin
 
 Set-RegistryValue 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive' 'DisableFileSyncNGSC' 1
-Set-RegistryValue 'HKLM:\SOFTWARE\Policies\Microsoft\OneDrive' 'KFMBlockOptIn' 1   # no folder redirection
 
 Write-Info 'OneDrive blocked by policy.'

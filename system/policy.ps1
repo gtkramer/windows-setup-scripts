@@ -12,16 +12,8 @@ Set-RegistryValue $dc 'LimitDiagnosticLogCollection' 1
 Set-RegistryValue $dc 'LimitDumpCollection' 1
 Set-RegistryValue $dc 'DoNotShowFeedbackNotifications' 1
 
-# --- Advertising ID, tailored experiences, activity history ---
+# --- Advertising ID ---
 Set-RegistryValue 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo' 'DisabledByGroupPolicy' 1
-$sys = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
-Set-RegistryValue $sys 'EnableActivityFeed' 0
-Set-RegistryValue $sys 'PublishUserActivities' 0
-Set-RegistryValue $sys 'UploadUserActivities' 0
-# Tailored experiences is a per-user policy. A standard user cannot write its own Policies
-# key, so the elevated half writes it into the daily user's hive.
-Set-RegistryValue (Get-TargetUserKey 'Software\Policies\Microsoft\Windows\CloudContent') `
-    'DisableTailoredExperiencesWithDiagnosticData' 1
 
 # --- Windows Update: install automatically, never restart while someone is signed in. ---
 # Everything else about Windows Update stays at its defaults (stable updates only, no pin).
@@ -39,4 +31,4 @@ Set-RegistryValue $edge 'PersonalizationReportingEnabled' 0
 
 # Location services: left at the Windows default.
 
-Write-Info 'Policies applied (diagnostic data Required, ad id / activity off, restart on your say-so).'
+Write-Info 'Policies applied (diagnostic data Required, ad id off, restart on your say-so).'

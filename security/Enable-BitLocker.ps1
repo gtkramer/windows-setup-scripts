@@ -2,22 +2,18 @@
 <#
 .SYNOPSIS
   Encrypt the system drive with BitLocker: XTS-AES-256, unlocked at boot by TPM plus a PIN you
-  type here. The recovery key is written to a folder you choose and is never uploaded.
+  type here. The recovery key is shown once for you to save in your password manager; it is
+  never written to a file and never uploaded.
 .DESCRIPTION
-  Run it as your standard account; it elevates itself. Run it once after the NVIDIA and
-  firmware installs and before restoring your files. Windows then checks at the next restart
-  that PIN entry works, and starts encrypting once it does.
+  Run it from a normal terminal; it elevates itself. Run it once after the NVIDIA and firmware
+  installs and before restoring your files. Windows then checks at the next restart that PIN
+  entry works, and starts encrypting once it does.
   Acts only on a drive that is not encrypted at all; in any other state it stops and explains.
-.PARAMETER KeyDir
-  Folder to write the recovery key to, for example a USB drive. Prompted for when omitted.
 #>
-param([string]$TargetUser, [string]$TargetSid, [string]$LogPath, [string]$KeyDir)
+param([string]$TargetUser)
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
-if (-not (Test-Admin)) {
-    $forward = if ($KeyDir) { @('-KeyDir', "`"$KeyDir`"") } else { @() }
-    exit (Invoke-Elevated -ScriptPath $PSCommandPath -ArgumentList $forward)
-}
+if (-not (Test-Admin)) { exit (Invoke-Elevated -ScriptPath $PSCommandPath) }
 
 function Read-Plain {
     # Reads a secret without echo and returns it as text for comparison.
@@ -28,7 +24,7 @@ function Read-Plain {
 
 $code = 0
 try {
-    Enter-Elevated -TargetUser $TargetUser -TargetSid $TargetSid -LogPath $LogPath
+    Enter-Elevated -TargetUser $TargetUser
 
     # --- Preconditions: UEFI Secure Boot and a ready TPM ---
     try { $secureBoot = Confirm-SecureBootUEFI }
@@ -67,17 +63,6 @@ The cipher cannot be changed on an encrypted drive. To start over, decrypt it fi
     Set-RegistryValue $fve 'EnableBDEWithNoTPM' 0
     foreach ($name in 'UseTPM', 'UseTPMPIN', 'UseTPMKey', 'UseTPMKeyPIN') { Set-RegistryValue $fve $name 2 }   # 2 = allow
 
-    # --- Where the recovery key goes: anywhere but the drive being encrypted ---
-    while ($true) {
-        if (-not $KeyDir) { $KeyDir = Read-Host 'Folder to write the recovery key to (for example a USB drive, E:\)' }
-        if (-not (Test-Path $KeyDir -PathType Container)) { Write-Warn "'$KeyDir' is not an existing folder."; $KeyDir = $null; continue }
-        if ([IO.Path]::GetPathRoot((Resolve-Path $KeyDir).Path) -eq "$SystemDrive\") {
-            Write-Warn "A recovery key stored on $SystemDrive is locked inside the drive it unlocks. Choose another drive."
-            $KeyDir = $null; continue
-        }
-        break
-    }
-
     # --- The PIN: typed twice, never written anywhere ---
     while ($true) {
         $pinText = Read-Plain 'BitLocker startup PIN (6 to 20 digits)'
@@ -88,25 +73,29 @@ The cipher cannot be changed on an encrypted drive. To start over, decrypt it fi
     $pin = ConvertTo-SecureString $pinText -AsPlainText -Force
     $pinText = $null
 
-    # --- Recovery password first, saved and checked before anything is encrypted ---
-    # Warnings are silenced because BitLocker prints the recovery password in them, and this
-    # window is logged.
+    # --- Recovery key first: shown, saved by you, and typed back before anything is encrypted ---
+    # BitLocker's own warnings are silenced because they repeat the recovery key.
     if ($types -notcontains 'RecoveryPassword') {
         Add-BitLockerKeyProtector -MountPoint $SystemDrive -RecoveryPasswordProtector -WarningAction SilentlyContinue | Out-Null
     }
     $rp = (Get-BitLockerVolume -MountPoint $SystemDrive).KeyProtector |
           Where-Object KeyProtectorType -eq 'RecoveryPassword' | Select-Object -Last 1
-    if (-not $rp -or -not $rp.RecoveryPassword) { Die 'The recovery password was not created; nothing was encrypted.' }
-    $keyFile = Join-Path $KeyDir "$HostName-recovery.txt"
-    @(
-        "BitLocker recovery - $HostName - $SystemDrive - $(Get-Date -Format 'yyyy-MM-dd')"
-        "Recovery Key ID  : $($rp.KeyProtectorId)"
-        "Recovery Password: $($rp.RecoveryPassword)"
-    ) | Set-Content -Path $keyFile -Encoding ASCII
-    if (-not (Select-String -Path $keyFile -SimpleMatch $rp.RecoveryPassword -Quiet)) {
-        Die "Could not confirm the recovery key was written to $keyFile; nothing was encrypted."
+    if (-not $rp -or -not $rp.RecoveryPassword) { Die 'The recovery key was not created; nothing was encrypted.' }
+
+    Write-Host ''
+    Write-Host "  BitLocker recovery key - $HostName - $SystemDrive - $(Get-Date -Format 'yyyy-MM-dd')"
+    Write-Host "  Key ID       : $($rp.KeyProtectorId)"
+    Write-Host "  Recovery key : $($rp.RecoveryPassword)"
+    Write-Host ''
+    Write-Info 'Save the key ID and the recovery key in your password manager now. Nothing is encrypted yet,'
+    Write-Info 'and the key is not written to disk or uploaded: this window is the only copy.'
+    $lastGroup = ($rp.RecoveryPassword -split '-')[-1]
+    while ($true) {
+        $typed = Read-Host 'From the saved entry, type the last 6 digits of the recovery key'
+        if ("$typed".Trim() -eq $lastGroup) { break }
+        Write-Warn 'That does not match. Check the saved entry and try again.'
     }
-    Write-Info "Recovery key written to $keyFile. It is not uploaded anywhere."
+    Clear-Host
 
     # --- Enable: TPM + PIN, used space only. No -SkipHardwareTest: Windows checks at the next
     #     restart that the PIN can be entered before it starts encrypting. ---
@@ -115,7 +104,7 @@ The cipher cannot be changed on an encrypted drive. To start over, decrypt it fi
 
     Write-Info 'BitLocker is set up (XTS-AES-256, TPM + PIN). Restart now: you will be asked for the PIN,'
     Write-Info "and encryption starts once Windows is back. Progress: manage-bde -status $SystemDrive"
-    Write-Warn "Move $keyFile to offline storage. Without it, a forgotten PIN or a firmware change locks you out."
+    Write-Warn 'Without the saved recovery key, a forgotten PIN or a firmware change locks you out.'
     Write-Warn "Before any BIOS or GPU firmware update: manage-bde -protectors -disable $SystemDrive -RebootCount 1"
 } catch {
     Write-Warn "BitLocker setup failed: $($_.Exception.Message)"

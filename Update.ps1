@@ -1,8 +1,8 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Upgrade the apps winget is responsible for. Run it as your standard account; it elevates
-  only when a machine-wide app has an update.
+  Upgrade the apps winget is responsible for. Run it from a normal (not elevated) terminal; it
+  elevates only when a machine-wide app has an update.
 .DESCRIPTION
   Windows Update, Defender signatures and Store apps update themselves and are not touched.
   Apps installed from the Store with their vendor's installer update themselves too.
@@ -24,7 +24,7 @@ $pending = @($apps.WingetMachine | Where-Object { Test-WingetUpgrade $_ })
 if ($pending.Count -gt 0 -or $Force) {
     if ($pending.Count -gt 0) { Write-Info "Updates available: $($pending -join ', ')" }
     $code = Invoke-Elevated -ScriptPath (Join-Path $KitRoot 'system\Update.ps1')
-    if ($code -ne 0) { Write-Warn "The elevated part exited with $code. See the log above." }
+    if ($code -ne 0) { Write-Warn "The elevated part exited with $code." }
 } else {
     Write-Info 'Nothing to upgrade; no elevation needed.'
 }

@@ -28,6 +28,7 @@ $addSettings = @(
 $keepApps = @(
     'Microsoft.WindowsAlarms'         # Clock
     'Microsoft.WindowsSoundRecorder'  # Sound Recorder
+    'Microsoft.Office.OneNote'        # OneNote (the Store edition; Office's own is never touched)
 )
 # Never passed, even if they become defaults: gaming, Start pins, Edge removal.
 $neverSettings = @(
@@ -48,7 +49,7 @@ try {
     $sumAsset = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS' }
     if (-not $zipAsset -or -not $sumAsset) { throw 'the release has no Win11Debloat.zip or SHA256SUMS asset.' }
 
-    # The administrator's temp folder: not writable by the standard account.
+    # The temp folder of whichever profile this runs in (the elevated one, outside a dry run).
     $work = Join-Path $env:TEMP "Win11Debloat-$($release.tag_name)"
     if (Test-Path $work) { Remove-Item $work -Recurse -Force }
     New-Item $work -ItemType Directory -Force | Out-Null
@@ -131,7 +132,7 @@ if ($removeApps.Count -eq 0) { Die "Win11Debloat's Apps.json yielded no default 
 
 # --- Run it against the daily user's profile ---------------------------------
 $toolArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script.FullName,
-              '-Silent', '-User', $targetUser, '-LogPath', $KitLogDir)
+              '-Silent', '-User', $targetUser)
 foreach ($name in $settings.Keys) {
     $toolArgs += "-$name"
     if ($settings[$name] -isnot [bool]) { $toolArgs += "$($settings[$name])" }
@@ -147,7 +148,9 @@ if ($DryRun) {
     return
 }
 
-$toolLog = Join-Path $KitLogDir 'Win11Debloat.log'
+# The tool always writes its own log, in the profile it runs in. The kit keeps no log of its
+# own; this one is read only to surface the tool's failures below.
+$toolLog = Join-Path $env:LOCALAPPDATA 'Win11Debloat\Logs\Win11Debloat.log'
 $logStart = if (Test-Path $toolLog) { (Get-Item $toolLog).Length } else { 0 }
 
 & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" @toolArgs

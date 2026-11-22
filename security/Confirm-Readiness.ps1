@@ -2,10 +2,10 @@
 <#
 .SYNOPSIS
   Read-only report on the state the kit is meant to produce: boot security, encryption,
-  accounts, policies and file-system settings. Run it as your standard account; it elevates
+  accounts, policies and file-system settings. Run it from a normal terminal; it elevates
   itself (several checks need administrator rights). Changes nothing; safe to re-run.
 #>
-param([string]$TargetUser, [string]$TargetSid, [string]$LogPath)
+param([string]$TargetUser)
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
 if (-not (Test-Admin)) { exit (Invoke-Elevated -ScriptPath $PSCommandPath) }
@@ -18,7 +18,7 @@ function Add-Row {
 
 $code = 0
 try {
-    Enter-Elevated -TargetUser $TargetUser -TargetSid $TargetSid -LogPath $LogPath
+    Enter-Elevated -TargetUser $TargetUser
 
     # --- Boot security ---
     try { $sb = [bool](Confirm-SecureBootUEFI) } catch { $sb = $false }
@@ -41,9 +41,8 @@ try {
     }
 
     # --- Accounts ---
-    $admins = @(Get-LocalGroupMember -SID 'S-1-5-32-544' | ForEach-Object { ($_.Name -split '\\')[-1] })
-    Add-Row "$TargetUser is a standard user" "administrators: $($admins -join ', ')" ($admins -notcontains $TargetUser)
-    Add-Row "$AdminName is an administrator" "$($admins -contains $AdminName)" ($admins -contains $AdminName)
+    $aam = Get-RegValue 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'TypeOfAdminApprovalMode'
+    Add-Row 'Administrator protection on' "TypeOfAdminApprovalMode=$aam" ($aam -eq 2)
     $builtin = Get-LocalUser | Where-Object { "$($_.SID)" -like 'S-1-5-21-*-500' }
     Add-Row 'Built-in Administrator disabled' "enabled=$($builtin.Enabled)" (-not $builtin.Enabled)
 
@@ -52,8 +51,6 @@ try {
     Add-Row 'Diagnostic data = Required (1)' "AllowTelemetry=$tel" ($tel -eq 1)
     $noReboot = Get-RegValue 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' 'NoAutoRebootWithLoggedOnUsers'
     Add-Row 'Update restart needs your say-so' "NoAutoRebootWithLoggedOnUsers=$noReboot" ($noReboot -eq 1)
-    $ppl = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' 'RunAsPPL'
-    Add-Row 'Sign-in process protection' "RunAsPPL=$ppl" ($ppl -in 1, 2)
 
     # --- Defender and firewall ---
     try {
@@ -64,7 +61,10 @@ try {
     $fwOk = -not ($fw | Where-Object { -not $_.Enabled -or "$($_.DefaultInboundAction)" -eq 'Allow' })
     Add-Row 'Firewall on, inbound blocked by default' (($fw | ForEach-Object { "$($_.Name)=$($_.Enabled)/$($_.DefaultInboundAction)" }) -join ' ') ([bool]$fwOk)
 
-    # --- Set once by the answer file ---
+    # --- Machine settings (system\machine.ps1 and the answer file) ---
+    Add-Row 'Computer name' "$env:COMPUTERNAME (want $HostName)" ($env:COMPUTERNAME -eq $HostName)
+    $tz = (Get-TimeZone).Id
+    Add-Row 'Time zone' "$tz" ($tz -eq $TimeZoneId)
     $fs = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
     $n83 = Get-RegValue $fs 'NtfsDisable8dot3NameCreation'
     Add-Row '8.3 names off for new files' "NtfsDisable8dot3NameCreation=$n83" ($n83 -eq 1)
