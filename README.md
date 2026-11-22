@@ -22,15 +22,15 @@ install that behaves like the LTSC edition: it installs the way Windows 7 did an
 
 | Area | Choice |
 |---|---|
-| Windows Update | Left to Windows: stable updates install automatically, no release pin. One policy: never restart while you are signed in, so you are prompted |
+| Windows Update | Left to Windows: stable updates install automatically, no release pin. One policy: monthly updates install on release, as on any Windows 11 PC, and you have 2 days to restart before Windows does it |
 | Accounts | One **local administrator account**, created by Windows Setup asking for a name and password. **Administrator protection** is on: you work without administrator rights and approve each elevation with Windows Hello. The built-in Administrator stays disabled. Your Microsoft account is signed in per app, not to Windows |
 | Bloat, ads, AI | [Win11Debloat](https://github.com/Raphire/Win11Debloat), latest release: the maintainer's defaults with a short exception list ([system/debloat.ps1](system/debloat.ps1)) |
 | Shell | Built-in settings only: extensions shown, Explorer opens to This PC, taskbar left with search and Task View hidden. Theme is left to Auto Dark Mode |
 | Telemetry | Supported policies only. Pro's floor is "Required"; nothing is disabled by force |
-| Security | Microsoft Defender with three extra protections, plus four settings from Microsoft's security baseline ([system/hardening.ps1](system/hardening.ps1)) |
-| Encryption | BitLocker, XTS-AES-256, TPM + PIN. The recovery key is shown once for your password manager; it is never written to a file or uploaded |
+| Security | Microsoft Defender with unwanted-app blocking, network protection and thirteen attack-surface rules ([system/defender.ps1](system/defender.ps1)), plus five settings from Microsoft's security baseline ([system/hardening.ps1](system/hardening.ps1)) |
+| Encryption | BitLocker, XTS-AES-256, TPM + PIN. Other internal drives are encrypted the same way and unlock by themselves once `C:` is unlocked. Each recovery key is shown once for your password manager; it is never written to a file or uploaded |
 | Apps | Microsoft Store first, then winget, then the vendor ([apps.psd1](apps.psd1)) |
-| Browser | Microsoft Edge, signed in |
+| Browser | Microsoft Edge, signed in, with its enhanced security mode on and its own password saving off |
 
 ## Layout
 
@@ -46,11 +46,13 @@ windows-setup-scripts/
 |   `-- machine, accounts, policy, hardening, defender, onedrive, apps, debloat
 |-- user/                      # AS YOU: your own account
 |   |-- Install.ps1
-|   |-- onedrive, apps, git, vscode/, terminal/, makemkv, tresorit   (standalone: emby)
+|   |-- onedrive, apps, git, vscode/, terminal/, makemkv, tresorit
 |   `-- Merge-JsonSettings.ps1 # helper (PowerShell 7): merge values into a JSON settings file
 |-- security/
-|   |-- Enable-BitLocker.ps1   # TPM + PIN, XTS-AES-256, recovery key shown for your password manager
-|   `-- Confirm-Readiness.ps1  # read-only report
+|   |-- Enable-BitLocker.ps1          # C: with TPM + PIN, XTS-AES-256, recovery key shown for your password manager
+|   |-- Enable-BitLockerDataDrive.ps1 # another internal drive, unlocked automatically after C:
+|   |-- bitlocker.ps1                 # helper shared by the two scripts above
+|   `-- Confirm-Readiness.ps1         # read-only report on everything the kit sets and relies on
 `-- test/New-TestVm.ps1        # Hyper-V VM for rehearsing the install
 ```
 
@@ -60,7 +62,7 @@ folder's `Install.ps1`. Modules are safe to re-run. The kit targets Windows Powe
 every Windows install has; only the JSON merge uses PowerShell 7, which the kit installs first.
 
 **Customize first:** the constants at the top of [common.ps1](common.ps1) (`$HostName`,
-`$TimeZoneId`, `$GitName`, `$GitEmail`, `$TrustedLanCidr`).
+`$TimeZoneId`, `$GitName`, `$GitEmail`).
 
 ## How elevation works
 
@@ -79,6 +81,24 @@ You run every script from a normal terminal. When a script needs administrator r
 - The kit runs from wherever you keep it (the USB at first, then your clone). **Your approval
   vouches for whatever is in that folder at that moment**, so keep the clone free of changes you
   did not make.
+
+### Confirming Administrator protection
+
+The account model depends on Administrator protection really being in effect, not just switched
+on in the registry. The proof is that an elevated window runs as a **different account** than
+yours: a hidden one that Windows manages. Three ways to see it:
+
+- `.\security\Confirm-Readiness.ps1` has the row **Administrator protection in effect**. It
+  passes only when the elevated window's account differs from yours, and shows both names.
+- Every elevated kit window prints `Elevated as <account>, working for <you>`. If the setting
+  is on but the two are the same account, the window warns that it is not in effect.
+- By hand: the elevation prompt is a Windows Security prompt asking for Windows Hello or your
+  password, not a Yes/No box, and `whoami` in an elevated terminal is not your account name.
+
+It takes effect after the restart that follows the first `Install.ps1`. If it is still not in
+effect after a restart, that Windows build is not applying the setting. The equivalent
+protection is then a second, standard account for daily use, with this account kept for
+elevation only.
 
 ---
 
@@ -110,6 +130,8 @@ You run every script from a normal terminal. When a script needs administrator r
    - NVIDIA App and driver: `winget install --id XP8CLZL93F5Z4P --source msstore`
    - Encryption: `.\security\Enable-BitLocker.ps1`. Save the recovery key it shows in your
      password manager, then restart and enter the PIN
+   - Other internal drives, once `C:` has finished encrypting:
+     `.\security\Enable-BitLockerDataDrive.ps1 -Drive D:` (see "Encrypting another drive")
    - Activate Windows with your Pro key
    - Sign in to the Store, Edge and Office with your Microsoft account. When Windows offers to
      use the account everywhere, choose **"Microsoft apps only"** so the Windows account stays local
@@ -150,6 +172,50 @@ account. After signing in, turn these off once in `edge://settings` (they sync w
 account): the Copilot button and sidebar, shopping and rewards, new-tab-page content and feed,
 "personalization & advertising". The kit still sets the Edge policies that do apply.
 
+The kit also sets four security policies for Edge ([system/policy.ps1](system/policy.ps1)):
+enhanced security mode (balanced), Edge's own password saving off (passwords belong in your
+password manager), SmartScreen on, and SmartScreen's blocking of potentially unwanted apps.
+Microsoft documents the two SmartScreen policies as honored only on domain-joined or managed
+PCs. Open `edge://policy` once: every policy Edge accepted is listed with status OK. If the two
+SmartScreen ones are missing or flagged, SmartScreen is still on by default; turn on "Block
+potentially unwanted apps" by hand in `edge://settings/privacy`.
+
+### Encrypting another drive
+
+For an internal drive other than `C:`, such as a media disk or a backup disk. The drive is
+encrypted with XTS-AES-256 and unlocks by itself once `C:` has been unlocked with the PIN.
+
+1. `C:` must be done first: `Enable-BitLocker.ps1`, restart, and wait until
+   `manage-bde -status C:` shows it fully encrypted with protection on.
+2. Connect the drive. If it is new, give it an NTFS volume and a drive letter in Disk Management.
+3. Run, once per drive:
+   ```powershell
+   .\security\Enable-BitLockerDataDrive.ps1 -Drive D:
+   ```
+   It shows that drive's recovery key and waits until you have typed part of it back from your
+   password manager. Save it with the title and key ID shown: the volume label tells the
+   drives apart later, drive letters do not.
+4. A large disk encrypts in the background and carries on after a restart. Keep it connected
+   until `manage-bde -status D:` shows 100%.
+
+Good to know:
+
+- **Only the space in use is encrypted** by default, which is all a new or empty drive needs.
+  For a drive that has ever held unencrypted files, add `-Full` (hours on a large hard disk),
+  or run `manage-bde -WipeFreeSpace D:` afterwards.
+- **A drive you keep disconnected** (the backup disk) needs nothing while it is unplugged. It
+  unlocks by itself whenever it is connected.
+- **Reinstalling Windows removes the automatic unlock**, because Windows keeps that key on
+  `C:`. Each drive's recovery key must be in your password manager before a rebuild. After
+  the rebuild, run the same command again for each drive: it asks for the recovery key,
+  unlocks the drive and sets up automatic unlock again. Nothing is re-encrypted.
+- **A SATA port with hot-plug turned on** makes Windows treat the disk as removable, and the
+  script stops. Turn hot-plug off for that port in the BIOS.
+- Suspending BitLocker on `C:` for a firmware update does not affect the other drives.
+- To decrypt `C:`, run `Clear-BitLockerAutoUnlock` first (elevated); the other drives then lock
+  at the next restart until you run the script for them again. To stop one drive unlocking
+  automatically: `Disable-BitLockerAutoUnlock -MountPoint D:`.
+
 ---
 
 ## Keeping it current
@@ -165,9 +231,31 @@ account): the Copilot button and sidebar, shopping and rewards, new-tab-page con
 | Windows itself | Windows Update, Defender signatures, Store apps |
 | The app itself | VS Code, Signal, Discord, Epic, Auto Dark Mode, Bing Wallpaper, NVIDIA App, Steam, Tresorit, Office |
 
-Windows installs updates automatically and then **waits for you** to restart; restarts ask for
-the BitLocker PIN. Having that one update policy means Windows holds some new monthly features
-until the yearly release and shows a "managed" note on the update page.
+Monthly updates are not held back: they install as soon as Microsoft releases them, as on any
+Windows 11 PC, because attackers start studying a fix the day it is published. The kit changes
+only the restart ([system/policy.ps1](system/policy.ps1)): you have **2 days**, and Windows
+does not restart by itself during them. When they are up it restarts whether or not you are
+signed in, after a 15-minute warning, and then waits at the BitLocker PIN prompt until you type
+the PIN. Unsaved work in open apps is lost, and a long rip or backup is interrupted. The policy
+counts in whole days, so the exact moment is the one Windows Update shows next to the pending
+restart. The yearly feature update and driver updates are not covered by the deadline; they
+restart the way Windows normally does, outside your active hours.
+
+**When an update is reported to be faulty** before it has reached this PC, or before a long rip
+or backup: Settings > Windows Update > "Pause updates" holds everything for a week at a time.
+A few times a year a monthly update sends some PCs to the BitLocker recovery screen; that is
+what the recovery key in your password manager is for, so keep it reachable from your phone.
+
+Having an update policy means Windows holds some new monthly features until the yearly release
+and shows a "managed" note on the update page.
+
+**Vendor apps that arrive with drivers.** Windows Update delivers drivers, and a driver can name
+a Microsoft Store app that Windows then installs with it (a monitor or audio control panel, for
+example). No setting separates the two short of taking all drivers out of Windows Update. If an
+app you do not want appears, uninstall it in Settings > Apps > Installed apps. If it returns,
+block that one device with the policy "Prevent installation of devices that match any of these
+device IDs" (`gpedit.msc` > Computer Configuration > Administrative Templates > System > Device
+Installation > Device Installation Restrictions).
 
 **Re-applying policies and the debloat tool:** re-run `Install.ps1`, for example after the yearly
 Windows release. It runs the then-latest Win11Debloat, which removes the maintainer's default app
@@ -193,9 +281,8 @@ Store's sandboxed VLC cannot play discs). The lists are in [apps.psd1](apps.psd1
 winget is there because the Store has no genuine or adequate edition, except Paint.NET, where
 the developer's free installer was chosen over the paid Store edition.
 
-Vendor downloads ([user/tresorit.ps1](user/tresorit.ps1), [user/emby.ps1](user/emby.ps1)) are
-fetched to the temp folder, run with the vendor's own setup window, and deleted. Nothing is kept
-in the kit.
+Vendor downloads ([user/tresorit.ps1](user/tresorit.ps1)) are fetched to the temp folder, run
+with the vendor's own setup window, and deleted. Nothing is kept in the kit.
 
 ## Rehearsing in a VM
 
@@ -206,7 +293,8 @@ Rehearse before touching the real PC. On a host with Hyper-V enabled
 .\test\New-TestVm.ps1 -WinIso C:\iso\Win11.iso      # the Media Creation Tool can save an ISO
 ```
 
-It packs the answer file and the kit into a small ISO and attaches it as a second DVD. The VM
+It packs the answer file and the kit into a small ISO and attaches it as a second DVD. Add
+`-DataDisk` for a second, empty disk to rehearse `Enable-BitLockerDataDrive.ps1` on. The VM
 cannot reproduce the graphics card's effect on BitLocker, and an unactivated Windows greys out
 the Personalization pages.
 
@@ -217,8 +305,10 @@ the Personalization pages.
 1. **BitLocker and firmware changes.** A BIOS update, a BIOS settings change or a GPU firmware
    update makes BitLocker ask for the recovery key at the next boot. Suspend it first:
    `manage-bde -protectors -disable C: -RebootCount 1`. The recovery key exists only where you
-   saved it.
-2. **Administrator protection is new** (2026) and has changed since release.
+   saved it. The same goes for every other encrypted drive: after a Windows reinstall its
+   recovery key is the only way back in.
+2. **Administrator protection is new** (2026) and has changed since release. Check that it is
+   in effect after every yearly Windows release (see "Confirming Administrator protection").
    - Microsoft says not to enable it on PCs that require Hyper-V. To run Hyper-V VMs, turn it
      off first and restart: Windows Security > Account protection, or set
      `TypeOfAdminApprovalMode` to `1` (see [system/accounts.ps1](system/accounts.ps1)).
@@ -239,7 +329,17 @@ the Personalization pages.
 6. **Not yet proven on real hardware.** The scripts were written against research on Windows 11
    Pro 26H2, not run end to end. Rehearse in the VM first and confirm:
    - Setup asks only for the disk, the account and the security questions.
-   - `Install.ps1` completes, and after the restart `Confirm-Readiness.ps1` passes.
+   - `Install.ps1` completes, and after the restart `Confirm-Readiness.ps1` passes. In
+     particular "Administrator protection in effect" shows two different account names, and
+     the memory integrity and LSA protection rows pass on a fresh install.
+   - Settings > Windows Update > Advanced options > "Configured update policies" lists the
+     restart deadline, "Notify me when a restart is required" is on, and after an update the
+     restart is forced about 2 days later and stops at the BitLocker PIN prompt.
+   - `edge://policy` lists the kit's Edge policies with status OK (see "Edge, by hand" for the
+     two SmartScreen ones).
+   - With `-DataDisk`: `Enable-BitLockerDataDrive.ps1` shows one recovery key, the disk unlocks
+     by itself after a restart, and after `Clear-BitLockerAutoUnlock` plus a restart the script
+     unlocks the locked disk with the typed recovery key.
    - `.\Update.ps1 -Force` works with Administrator protection on (winget in the elevated profile).
    - `Enable-BitLocker.ps1` shows the key, takes the typed-back digits, and the PIN is asked at
      restart.

@@ -4,7 +4,7 @@
 #   1. Microsoft Store, packaged (MSIX)
 #   2. Microsoft Store, the vendor's own installer listed by the vendor
 #   3. winget, by exact ID, stable releases only
-#   4. The vendor's website, over HTTPS (see user\tresorit.ps1, user\emby.ps1)
+#   4. The vendor's website, over HTTPS (see user\tresorit.ps1)
 # Two tests at every tier: the publisher is the genuine vendor, and a packaged edition is
 # skipped when it lacks something needed.
 #

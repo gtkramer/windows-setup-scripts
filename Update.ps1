@@ -35,7 +35,7 @@ $rebootKeys = @(
     'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
 )
 if ($rebootKeys | Where-Object { Test-Path $_ }) {
-    Write-Warn 'A restart is pending. Restart when convenient; you will be asked for the BitLocker PIN.'
+    Write-Warn 'A restart is pending. Restart within 2 days of the update or Windows does it for you; either way you will be asked for the BitLocker PIN.'
 } else {
     Write-Info 'No restart pending.'
 }

@@ -11,9 +11,9 @@ try {
     Invoke-Modules -BaseDir $PSScriptRoot -Name @(
         'machine'     # computer name, time zone, UTC clock, 8.3 names, Developer Mode
         'accounts'    # Administrator protection, no security-question password reset
-        'policy'      # telemetry, Windows Update restart, Edge
-        'hardening'   # four settings from Microsoft's security baseline
-        'defender'    # Defender on, plus low-friction extras
+        'policy'      # telemetry, Windows Update restart deadline, Edge
+        'hardening'   # five settings from Microsoft's security baseline
+        'defender'    # Defender on, plus low-friction extras and attack-surface rules
         'onedrive'    # block OneDrive by policy (the user half uninstalls it)
         'apps'        # machine-wide winget apps
         'debloat'     # Win11Debloat: maintainer's defaults minus the kit's exceptions (last: it

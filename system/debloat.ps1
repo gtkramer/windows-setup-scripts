@@ -30,10 +30,12 @@ $keepApps = @(
     'Microsoft.WindowsSoundRecorder'  # Sound Recorder
     'Microsoft.Office.OneNote'        # OneNote (the Store edition; Office's own is never touched)
 )
-# Never passed, even if they become defaults: gaming, Start pins, Edge removal.
+# Never passed, even if they become defaults: gaming, Start pins, Edge removal, and the
+# update-restart switch (it would undo the restart deadline in system\policy.ps1).
 $neverSettings = @(
     'RemoveGamingApps', 'DisableDVR', 'DisableGameBarIntegration'
     'ClearStart', 'ClearStartAllUsers', 'ReplaceStart', 'ReplaceStartAllUsers', 'ForceRemoveEdge'
+    'PreventUpdateAutoReboot'
 )
 
 $targetUser = Get-Variable -Name KitTargetUser -Scope Global -ValueOnly -ErrorAction SilentlyContinue

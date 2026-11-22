@@ -9,9 +9,11 @@
   installs and before restoring your files. Windows then checks at the next restart that PIN
   entry works, and starts encrypting once it does.
   Acts only on a drive that is not encrypted at all; in any other state it stops and explains.
+  Other internal drives are done afterwards with Enable-BitLockerDataDrive.ps1.
 #>
 param([string]$TargetUser)
 . (Join-Path $PSScriptRoot '..\common.ps1')
+. (Join-Path $PSScriptRoot 'bitlocker.ps1')
 
 if (-not (Test-Admin)) { exit (Invoke-Elevated -ScriptPath $PSCommandPath) }
 
@@ -34,8 +36,8 @@ try {
     if (-not $tpm.TpmPresent -or -not $tpm.TpmReady) { Die 'The TPM is not present or not ready. Enable PTT/fTPM in firmware first.' }
 
     # --- Act only on a clean state ---
-    $vol   = Get-BitLockerVolume -MountPoint $SystemDrive
-    $types = @($vol.KeyProtector | ForEach-Object { "$($_.KeyProtectorType)" })
+    $vol   = Get-BitLockerVolume -MountPoint $SystemDrive -ErrorAction Stop
+    $types = Get-ProtectorType $vol
     if ($vol.ProtectionStatus -eq 'On' -and $types -contains 'TpmPin') {
         Write-Info "$SystemDrive is already protected ($($vol.EncryptionMethod); $($types -join ', ')). Nothing to do."
         Exit-Elevated -Code 0
@@ -51,17 +53,13 @@ $SystemDrive is in a state this script does not change:
   status $($vol.VolumeStatus), protection $($vol.ProtectionStatus), method $($vol.EncryptionMethod), protectors [$($types -join ', ')]
 The cipher cannot be changed on an encrypted drive. To start over, decrypt it first
 (manage-bde -off $SystemDrive, wait for 'Fully Decrypted' in manage-bde -status), then re-run.
+If other drives unlock automatically from this one, Windows refuses to decrypt it until you
+run Clear-BitLockerAutoUnlock; those drives then need Enable-BitLockerDataDrive.ps1 again.
 "@
     }
 
     # --- Policy: XTS-AES-256, and a startup PIN allowed. Must be in place before enabling. ---
-    $fve = 'HKLM:\SOFTWARE\Policies\Microsoft\FVE'
-    Set-RegistryValue $fve 'EncryptionMethodWithXtsOs'  7
-    Set-RegistryValue $fve 'EncryptionMethodWithXtsFdv' 7
-    Set-RegistryValue $fve 'EncryptionMethodWithXtsRdv' 7
-    Set-RegistryValue $fve 'UseAdvancedStartup' 1
-    Set-RegistryValue $fve 'EnableBDEWithNoTPM' 0
-    foreach ($name in 'UseTPM', 'UseTPMPIN', 'UseTPMKey', 'UseTPMKeyPIN') { Set-RegistryValue $fve $name 2 }   # 2 = allow
+    Set-BitLockerPolicy
 
     # --- The PIN: typed twice, never written anywhere ---
     while ($true) {
@@ -74,33 +72,13 @@ The cipher cannot be changed on an encrypted drive. To start over, decrypt it fi
     $pinText = $null
 
     # --- Recovery key first: shown, saved by you, and typed back before anything is encrypted ---
-    # BitLocker's own warnings are silenced because they repeat the recovery key.
-    if ($types -notcontains 'RecoveryPassword') {
-        Add-BitLockerKeyProtector -MountPoint $SystemDrive -RecoveryPasswordProtector -WarningAction SilentlyContinue | Out-Null
-    }
-    $rp = (Get-BitLockerVolume -MountPoint $SystemDrive).KeyProtector |
-          Where-Object KeyProtectorType -eq 'RecoveryPassword' | Select-Object -Last 1
-    if (-not $rp -or -not $rp.RecoveryPassword) { Die 'The recovery key was not created; nothing was encrypted.' }
-
-    Write-Host ''
-    Write-Host "  BitLocker recovery key - $HostName - $SystemDrive - $(Get-Date -Format 'yyyy-MM-dd')"
-    Write-Host "  Key ID       : $($rp.KeyProtectorId)"
-    Write-Host "  Recovery key : $($rp.RecoveryPassword)"
-    Write-Host ''
-    Write-Info 'Save the key ID and the recovery key in your password manager now. Nothing is encrypted yet,'
-    Write-Info 'and the key is not written to disk or uploaded: this window is the only copy.'
-    $lastGroup = ($rp.RecoveryPassword -split '-')[-1]
-    while ($true) {
-        $typed = Read-Host 'From the saved entry, type the last 6 digits of the recovery key'
-        if ("$typed".Trim() -eq $lastGroup) { break }
-        Write-Warn 'That does not match. Check the saved entry and try again.'
-    }
-    Clear-Host
+    Confirm-RecoveryKey -MountPoint $SystemDrive `
+        -Title "BitLocker recovery key - $HostName - $SystemDrive (system) - $(Get-Date -Format 'yyyy-MM-dd')"
 
     # --- Enable: TPM + PIN, used space only. No -SkipHardwareTest: Windows checks at the next
     #     restart that the PIN can be entered before it starts encrypting. ---
     Enable-BitLocker -MountPoint $SystemDrive -EncryptionMethod XtsAes256 -UsedSpaceOnly `
-        -TpmAndPinProtector -Pin $pin -WarningAction SilentlyContinue | Out-Null
+        -TpmAndPinProtector -Pin $pin -WarningAction SilentlyContinue -ErrorAction Stop | Out-Null
 
     Write-Info 'BitLocker is set up (XTS-AES-256, TPM + PIN). Restart now: you will be asked for the PIN,'
     Write-Info "and encryption starts once Windows is back. Progress: manage-bde -status $SystemDrive"

@@ -12,19 +12,23 @@
   Windows greys out the Personalization pages.
 .PARAMETER WinIso
   The Windows 11 ISO from Microsoft (the Media Creation Tool can save one).
+.PARAMETER DataDisk
+  Add a second, empty 20 GB disk for rehearsing security\Enable-BitLockerDataDrive.ps1.
 #>
 param(
     [string]$TargetUser,
     [string]$WinIso,
     [string]$Name = 'W11-kit-test',
-    [string]$VmRoot = (Join-Path $env:ProgramData 'windows-setup-scripts\vm')
+    [string]$VmRoot = (Join-Path $env:ProgramData 'windows-setup-scripts\vm'),
+    [switch]$DataDisk
 )
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
-if (-not $WinIso) { Die 'Usage: .\test\New-TestVm.ps1 -WinIso <Windows ISO>' }
+if (-not $WinIso) { Die 'Usage: .\test\New-TestVm.ps1 -WinIso <Windows ISO> [-DataDisk]' }
 
 if (-not (Test-Admin)) {
     $forward = @('-WinIso', "`"$WinIso`"", '-Name', "`"$Name`"", '-VmRoot', "`"$VmRoot`"")
+    if ($DataDisk) { $forward += '-DataDisk' }
     exit (Invoke-Elevated -ScriptPath $PSCommandPath -ArgumentList $forward)
 }
 
@@ -88,11 +92,21 @@ try {
     $bootDvd = Add-VMDvdDrive -VMName $Name -Path (Resolve-Path $WinIso).Path -Passthru
     Add-VMDvdDrive  -VMName $Name -Path $kitIso
     Set-VMFirmware  -VMName $Name -FirstBootDevice $bootDvd
+    if ($DataDisk) {
+        $dataVhd = Join-Path $VmRoot "$Name\$Name-data.vhdx"
+        New-VHD -Path $dataVhd -SizeBytes 20GB -Dynamic | Out-Null
+        Add-VMHardDiskDrive -VMName $Name -Path $dataVhd
+    }
 
-    Write-Info "VM $Name created (4 processors, 8 GB, 100 GB disk, Secure Boot, TPM)."
+    Write-Info "VM $Name created (4 processors, 8 GB, 100 GB disk, Secure Boot, TPM$(if ($DataDisk) { ', 20 GB data disk' }))."
     Write-Info "Start it:        Start-VM $Name; vmconnect.exe localhost $Name    (press a key at the boot prompt)"
     Write-Info "Snapshot it:     Checkpoint-VM -Name $Name -SnapshotName clean-install"
     Write-Info "Before BitLocker tests, eject the DVDs:  Get-VMDvdDrive -VMName $Name | Set-VMDvdDrive -Path `$null"
+    if ($DataDisk) {
+        Write-Info 'Windows Setup lists two disks: install to the 100 GB one. Then format the data disk inside the VM (elevated):'
+        Write-Info '  Get-Disk | Where-Object PartitionStyle -eq RAW | Initialize-Disk -PartitionStyle GPT -PassThru | New-Partition -UseMaximumSize -AssignDriveLetter | Format-Volume -FileSystem NTFS -NewFileSystemLabel Data'
+        Write-Info 'A checkpoint also reverts the data disk. To rehearse the rebuild case, run Clear-BitLockerAutoUnlock (elevated) and restart: the data disk is then locked.'
+    }
 } catch {
     Write-Warn "VM creation failed: $($_.Exception.Message)"
     $code = 1
