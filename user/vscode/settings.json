@@ -1,0 +1,10 @@
+{
+    "workbench.startupEditor": "none",
+    "window.zoomLevel": 1,
+    "window.titleBarStyle": "custom",
+    "security.workspace.trust.enabled": false,
+    "window.autoDetectColorScheme": true,
+    "editor.stickyTabStops": true,
+    "editor.renderWhitespace": "all",
+    "terminal.integrated.stickyScroll.enabled": false
+}
