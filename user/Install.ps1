@@ -21,3 +21,4 @@ Invoke-Modules -BaseDir $PSScriptRoot -Name @(
 )
 
 Write-Info 'User part complete.'
+Show-KitWarning   # the elevated part showed its own, in its window

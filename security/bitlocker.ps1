@@ -3,18 +3,13 @@
 # common.ps1; not run by hand.
 
 function Set-BitLockerPolicy {
-    # XTS-AES-256 for every drive type, and a startup PIN allowed. Must be in place before a
-    # drive is encrypted: the cipher cannot be changed on an encrypted drive.
+    # XTS-AES-256 for every drive type, and a startup PIN allowed: the BitLocker group of
+    # system\registry.psd1. Must be in place before a drive is encrypted: the cipher cannot be
+    # changed on an encrypted drive.
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
-        Justification = 'Thin wrapper over Set-RegistryValue, which supports ShouldProcess.')]
+        Justification = 'Thin wrapper over Set-KitRegistry, whose writers support ShouldProcess.')]
     param()
-    $fve = 'HKLM:\SOFTWARE\Policies\Microsoft\FVE'
-    Set-RegistryValue $fve 'EncryptionMethodWithXtsOs'  7
-    Set-RegistryValue $fve 'EncryptionMethodWithXtsFdv' 7
-    Set-RegistryValue $fve 'EncryptionMethodWithXtsRdv' 7
-    Set-RegistryValue $fve 'UseAdvancedStartup' 1
-    Set-RegistryValue $fve 'EnableBDEWithNoTPM' 0
-    foreach ($name in 'UseTPM', 'UseTPMPIN', 'UseTPMKey', 'UseTPMKeyPIN') { Set-RegistryValue $fve $name 2 }   # 2 = allow
+    Set-KitRegistry -Group BitLocker
 }
 
 function Get-ProtectorType {

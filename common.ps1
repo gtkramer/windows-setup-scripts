@@ -53,8 +53,36 @@ function Write-Info {
     param([string]$Message)
     Write-Host "INFO: $Message" -ForegroundColor Cyan
 }
-function Write-Warn { param([string]$Message) Write-Warning $Message }
-function Die        { param([string]$Message) throw "ERROR: $Message" }
+function Die { param([string]$Message) throw "ERROR: $Message" }
+
+# Warnings are shown as they happen and also collected, so a run can repeat them at its end:
+# in a long run they scroll away. Nothing is written to disk. The list is global because every
+# module dot-sources this file again and must add to the same list.
+if (-not (Get-Variable -Name KitWarnings -Scope Global -ErrorAction SilentlyContinue)) {
+    $global:KitWarnings = New-Object System.Collections.Generic.List[string]
+}
+function Write-Warn {
+    param([string]$Message)
+    $global:KitWarnings.Add($Message)
+    Write-Warning $Message
+}
+function Show-KitWarning {
+    # Repeats the warnings collected since the last call, then forgets them. Silent when there
+    # are none.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '',
+        Justification = 'Interactive provisioning status; console output is intentional.')]
+    param()
+    if ($global:KitWarnings.Count -eq 0) { return }
+    Write-Host ''
+    Write-Host "$($global:KitWarnings.Count) warning(s) in this run:" -ForegroundColor Yellow
+    foreach ($warning in $global:KitWarnings) { Write-Host "  - $warning" -ForegroundColor Yellow }
+    $global:KitWarnings.Clear()
+}
+function Clear-KitWarning {
+    # First call in Install.ps1 and Update.ps1: drop warnings left by an earlier run that
+    # stopped before it could show them.
+    $global:KitWarnings.Clear()
+}
 
 function Test-Admin {
     # True when this process holds an elevated administrator token.
@@ -134,9 +162,10 @@ function Get-AdminProtectionState {
 }
 
 function Exit-Elevated {
-    # Last call in every elevated script. Nothing is logged to disk, so the window stays open
-    # until you have read it.
+    # Last call in every elevated script. Nothing is logged to disk, so the run's warnings are
+    # repeated and the window stays open until you have read it.
     param([int]$Code = 0)
+    Show-KitWarning
     $null = Read-Host 'Press Enter to close this window'
     exit $Code
 }
@@ -171,6 +200,40 @@ function Remove-RegistryValue {
     if ($null -eq (Get-RegValue $Path $Name)) { return }
     if ($PSCmdlet.ShouldProcess("$Path\$Name", 'remove')) {
         Remove-ItemProperty -Path $Path -Name $Name -Force
+    }
+}
+
+function Get-KitRegistry {
+    # The kit's registry values from system\registry.psd1, one object per value:
+    # Group, Area, Check, Path, Name, Value. A Value of $null means "must be absent".
+    param([ValidateSet('Apply', 'BitLocker', 'Expect')][string[]]$Group = @('Apply', 'BitLocker', 'Expect'))
+    $file  = Join-Path $KitRoot 'system\registry.psd1'
+    $table = Import-PowerShellDataFile -Path $file
+    foreach ($groupName in $Group) {
+        foreach ($key in @($table[$groupName])) {
+            if (-not $key.Area -or -not $key.Path -or -not $key.Values) { Die "registry.psd1 ($groupName): every entry needs Area, Path and Values." }
+            foreach ($value in @($key.Values)) {
+                if (-not $value.Name -or -not $value.Check -or -not $value.ContainsKey('Value')) {
+                    Die "registry.psd1 ($groupName, $($key.Path)): every value needs Name, Value and Check."
+                }
+                [pscustomobject]@{
+                    Group = $groupName; Area = $key.Area; Check = $value.Check
+                    Path  = $key.Path;  Name = $value.Name; Value = $value.Value
+                }
+            }
+        }
+    }
+}
+
+function Set-KitRegistry {
+    # Writes one group of system\registry.psd1: sets each value, or removes it when the table
+    # says it must be absent. Safe to re-run.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '',
+        Justification = 'Thin wrapper over Set-RegistryValue and Remove-RegistryValue, which support ShouldProcess.')]
+    param([Parameter(Mandatory)][ValidateSet('Apply', 'BitLocker')][string]$Group)
+    foreach ($row in @(Get-KitRegistry -Group $Group)) {
+        if ($null -eq $row.Value) { Remove-RegistryValue $row.Path $row.Name }
+        else { Set-RegistryValue $row.Path $row.Name $row.Value }
     }
 }
 
@@ -224,8 +287,9 @@ function Set-JsonSettings {
 
 # --- Package wrappers --------------------------------------------------------
 $WingetNoApplicableInstaller = -1978335216   # 0x8A150010
-$WingetNoUpgradeAvailable    = -1978335189   # 0x8A15002B
-$null = $WingetNoApplicableInstaller, $WingetNoUpgradeAvailable
+$WingetNoUpgradeAvailable    = -1978335189   # 0x8A15002B: installed already, nothing newer
+$WingetAlreadyInstalled      = -1978335135   # 0x8A150061: installed already
+$null = $WingetNoApplicableInstaller, $WingetNoUpgradeAvailable, $WingetAlreadyInstalled
 
 function Get-AppList {
     # The app lists live in apps.psd1, grouped by source and scope.
@@ -263,8 +327,11 @@ function Install-WingetPackage {
             # Some manifests declare no scope; retry without the filter.
             winget install @idArgs @common
         }
-        # Non-zero also means "already installed / nothing newer": a success for a re-run.
-        if ($LASTEXITCODE -ne 0) { Write-Warn "winget exit $LASTEXITCODE for $pkg (already installed?)." }
+        # "Already installed" and "nothing newer" are a success for a re-run; anything else failed.
+        $code = $LASTEXITCODE
+        if ($code -notin 0, $WingetNoUpgradeAvailable, $WingetAlreadyInstalled) {
+            Write-Warn ("winget could not install $pkg (exit $code, 0x{0:X8}). Re-run once the cause is fixed." -f $code)
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # Uninstall the OneDrive client with its own uninstaller. OneDrive installs per user, so this
-# runs as you; system\onedrive.ps1 blocks it by policy so it does not return.
+# runs as you; system\registry.psd1 blocks it by policy so it does not return.
 . (Join-Path $PSScriptRoot '..\common.ps1')
 
 Assert-NotAdmin

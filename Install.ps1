@@ -11,11 +11,12 @@
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 Assert-NotAdmin
+Clear-KitWarning
 
 $code = Invoke-Elevated -ScriptPath (Join-Path $KitRoot 'system\Install.ps1')
 if ($code -ne 0) { Die "The elevated part failed (exit $code). Read its window, fix and re-run." }
 
-& (Join-Path $KitRoot 'user\Install.ps1')
+& (Join-Path $KitRoot 'user\Install.ps1')   # repeats its own warnings at its end
 
 Write-Info 'Install complete. Restart: the computer name, Administrator protection and the shell settings need it.'
 Write-Info 'Next (see README): Windows Hello PIN -> NVIDIA App -> security\Enable-BitLocker.ps1 -> Edge settings -> restore files.'

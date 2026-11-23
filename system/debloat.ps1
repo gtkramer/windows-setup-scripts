@@ -5,9 +5,11 @@
   app-removal list, minus a short list of exceptions and plus a short list of additions.
 .DESCRIPTION
   The maintainer keeps each switch current as Windows changes, so the only thing maintained
-  here is the three lists below. Every switch name is checked against the release before it
-  runs, so a renamed or removed switch fails loudly instead of being skipped.
-  Runs at install and whenever Install.ps1 is re-run; never from Update.ps1.
+  here is the lists below. Every switch and app name is checked against the release before it
+  runs, so a renamed or removed one fails loudly instead of being skipped.
+  Runs at install and whenever Install.ps1 is re-run; never from Update.ps1. Each run uses the
+  then-latest release, and the tool itself makes a restore point (turning System Restore on
+  for the system drive if it was off) and a registry backup in the elevated profile.
 #>
 param([switch]$DryRun)   # download, verify and print what would be passed; change nothing
 . (Join-Path $PSScriptRoot '..\common.ps1')
@@ -16,11 +18,15 @@ if (-not $DryRun) { Assert-Admin }
 
 # --- The kit's deviations from the maintainer's defaults ---------------------
 $dropSettings = @(
-    'DisableTelemetry'                # disables the telemetry services and Defender sample submission
+    # Besides privacy values the kit already covers (answer file, registry.psd1), this one
+    # disables eight Windows scheduled tasks, among them the Compatibility Appraiser that
+    # Windows Update uses to judge whether a PC is ready for the yearly release.
+    'DisableTelemetry'
     'DisableStoreSearchSuggestions'   # works by denying access to a Store database file
 )
 $addSettings = @(
     'DisableNotepadAI', 'DisablePaintAI', 'DisableEdgeAI'
+    'DisableSettings365Ads'           # no Microsoft 365 card on the Settings home page
     'ExplorerToThisPC'                # File Explorer opens to This PC
     'HideSearchTb'                    # no search box or icon on the taskbar
     'TaskbarAlignLeft', 'HideTaskview'
@@ -30,8 +36,13 @@ $keepApps = @(
     'Microsoft.WindowsSoundRecorder'  # Sound Recorder
     'Microsoft.Office.OneNote'        # OneNote (the Store edition; Office's own is never touched)
 )
+# Removed although the maintainer does not select them by default. Each must be an app the
+# tool knows (an AppId in its Config\Apps.json).
+$alsoRemoveApps = @(
+    'Microsoft.OutlookForWindows'     # the new Outlook
+)
 # Never passed, even if they become defaults: gaming, Start pins, Edge removal, and the
-# update-restart switch (it would undo the restart deadline in system\policy.ps1).
+# update-restart switch (it would undo the restart deadline in system\registry.psd1).
 $neverSettings = @(
     'RemoveGamingApps', 'DisableDVR', 'DisableGameBarIntegration'
     'ClearStart', 'ClearStartAllUsers', 'ReplaceStart', 'ReplaceStartAllUsers', 'ForceRemoveEdge'
@@ -124,13 +135,16 @@ foreach ($name in @($settings.Keys)) {
     }
 }
 
-# --- Maintainer's default app-removal list, minus the apps to keep -----------
-$removeApps = @((Get-Content $appsFile -Raw | ConvertFrom-Json).Apps |
-    Where-Object { $_.SelectedByDefault } |
-    ForEach-Object { $_.AppId } |          # AppId is a string or a list of strings
-    Where-Object { $_ -notin $keepApps } |
-    Select-Object -Unique)
-if ($removeApps.Count -eq 0) { Die "Win11Debloat's Apps.json yielded no default apps. Update system\debloat.ps1." }
+# --- Maintainer's default app-removal list, minus the apps to keep, plus the kit's own -----
+$toolApps    = @((Get-Content $appsFile -Raw | ConvertFrom-Json).Apps)
+$knownApps   = @($toolApps | ForEach-Object { $_.AppId })          # AppId is a string or a list of strings
+$defaultApps = @($toolApps | Where-Object { $_.SelectedByDefault } | ForEach-Object { $_.AppId })
+if ($defaultApps.Count -eq 0) { Die "Win11Debloat's Apps.json yielded no default apps. Update system\debloat.ps1." }
+foreach ($app in $alsoRemoveApps) {
+    if ($app -notin $knownApps) { Die "Win11Debloat does not know the app '$app' (it is not in Config\Apps.json). Update `$alsoRemoveApps in system\debloat.ps1." }
+    if ($app -in $keepApps)     { Die "'$app' is in both `$keepApps and `$alsoRemoveApps in system\debloat.ps1." }
+}
+$removeApps = @(($defaultApps + $alsoRemoveApps) | Where-Object { $_ -notin $keepApps } | Select-Object -Unique)
 
 # --- Run it against the daily user's profile ---------------------------------
 $toolArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script.FullName,
@@ -142,7 +156,7 @@ foreach ($name in $settings.Keys) {
 $toolArgs += @('-RemoveApps', '-Apps', ($removeApps -join ','))
 
 Write-Info "Settings: $($settings.Keys -join ', ')"
-Write-Info "Removing $($removeApps.Count) default apps (keeping: $($keepApps -join ', '))."
+Write-Info "Removing $($removeApps.Count) apps: the maintainer's default list, plus $($alsoRemoveApps -join ', '); keeping $($keepApps -join ', ')."
 
 if ($DryRun) {
     Write-Info "Dry run. Apps that would be removed: $($removeApps -join ', ')"

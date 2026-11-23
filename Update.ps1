@@ -12,6 +12,7 @@ param([switch]$Force)   # -Force: run the elevated half even when nothing looks 
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 Assert-NotAdmin
+Clear-KitWarning
 Assert-Winget
 $apps = Get-AppList
 
@@ -41,3 +42,4 @@ if ($rebootKeys | Where-Object { Test-Path $_ }) {
 }
 $gpu = Get-CimInstance Win32_VideoController | Where-Object { $_.Name -match 'NVIDIA' }
 if ($gpu) { Write-Info "NVIDIA driver: $($gpu.DriverVersion) ($($gpu.Name)). Update it in the NVIDIA App." }
+Show-KitWarning

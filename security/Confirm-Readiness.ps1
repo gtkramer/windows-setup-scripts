@@ -8,7 +8,9 @@
   PASS means the value is what the kit wants. CHECK means look at it: something was not
   applied, was changed since, or cannot be confirmed yet (for example before the restart
   that Install.ps1 asks for, or before Enable-BitLocker.ps1 has been run).
-  When a module starts setting something new, add it to the table below.
+  Registry values are read from system\registry.psd1, the same table Install.ps1 writes from,
+  so a new value there is reported with no change here. A check that is not a registry value
+  is written out in this script.
 #>
 param([string]$TargetUser)
 . (Join-Path $PSScriptRoot '..\common.ps1')
@@ -32,67 +34,6 @@ function Add-Check {
         Add-Row $Area $Check "error: $($_.Exception.Message)" $false
     }
 }
-
-# --- Registry values the kit sets (or, in the last group, relies on). Want = $null means the
-#     value must be absent. Grouped by the script that sets each one. ---
-$fs    = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
-$uac   = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
-$dc    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'
-$wu    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
-$edge  = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge'
-$dns   = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient'
-$xplr  = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer'
-$fve   = 'HKLM:\SOFTWARE\Policies\Microsoft\FVE'
-$expected = @(
-    # media\autounattend.xml
-    @{ Area = 'Answer file'; Check = 'Long paths enabled';                  Path = $fs; Name = 'LongPathsEnabled'; Want = 1 }
-    @{ Area = 'Answer file'; Check = 'Fast Startup off';                    Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power'; Name = 'HiberbootEnabled'; Want = 0 }
-    @{ Area = 'Answer file'; Check = 'Automatic device encryption prevented'; Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\BitLocker'; Name = 'PreventDeviceEncryption'; Want = 1 }
-    # system\machine.ps1
-    @{ Area = 'Machine';     Check = 'Hardware clock in UTC';               Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\TimeZoneInformation'; Name = 'RealTimeIsUniversal'; Want = 1 }
-    @{ Area = 'Machine';     Check = '8.3 names off for new files';         Path = $fs; Name = 'NtfsDisable8dot3NameCreation'; Want = 1 }
-    @{ Area = 'Machine';     Check = 'Developer Mode (symbolic links)';     Path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\AppModelUnlock'; Name = 'AllowDevelopmentWithoutDevLicense'; Want = 1 }
-    # system\accounts.ps1
-    @{ Area = 'Accounts';    Check = 'Administrator protection configured'; Path = $uac; Name = 'TypeOfAdminApprovalMode'; Want = 2 }
-    @{ Area = 'Accounts';    Check = 'Security-question password reset off'; Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'; Name = 'NoLocalPasswordResetQuestions'; Want = 1 }
-    # system\policy.ps1
-    @{ Area = 'Policy';      Check = 'Diagnostic data = Required';          Path = $dc; Name = 'AllowTelemetry'; Want = 1 }
-    @{ Area = 'Policy';      Check = 'Diagnostic log collection limited';   Path = $dc; Name = 'LimitDiagnosticLogCollection'; Want = 1 }
-    @{ Area = 'Policy';      Check = 'Dump collection limited';             Path = $dc; Name = 'LimitDumpCollection'; Want = 1 }
-    @{ Area = 'Policy';      Check = 'Feedback notifications off';          Path = $dc; Name = 'DoNotShowFeedbackNotifications'; Want = 1 }
-    @{ Area = 'Policy';      Check = 'Advertising ID off';                  Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AdvertisingInfo'; Name = 'DisabledByGroupPolicy'; Want = 1 }
-    @{ Area = 'Updates';     Check = 'Monthly updates not held back';       Path = $wu; Name = 'DeferQualityUpdates'; Want = $null }
-    @{ Area = 'Updates';     Check = 'No waiting period after release';     Path = $wu; Name = 'DeferQualityUpdatesPeriodInDays'; Want = $null }
-    @{ Area = 'Updates';     Check = 'Restart deadline policy on';          Path = $wu; Name = 'SetComplianceDeadlineForQU'; Want = 1 }
-    @{ Area = 'Updates';     Check = 'Updates install as soon as offered';  Path = $wu; Name = 'ConfigureDeadlineForQualityUpdates'; Want = 0 }
-    @{ Area = 'Updates';     Check = 'Restart within 2 days of installing'; Path = $wu; Name = 'ConfigureDeadlineGracePeriod'; Want = 2 }
-    @{ Area = 'Updates';     Check = 'No automatic restart before then';    Path = $wu; Name = 'ConfigureDeadlineNoAutoRebootForQualityUpdates'; Want = 1 }
-    @{ Area = 'Updates';     Check = 'Old update option removed';           Path = "$wu\AU"; Name = 'AUOptions'; Want = $null }
-    @{ Area = 'Updates';     Check = 'Old no-restart option removed';       Path = "$wu\AU"; Name = 'NoAutoRebootWithLoggedOnUsers'; Want = $null }
-    @{ Area = 'Updates';     Check = 'Restart notice shown when pending';   Path = 'HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'; Name = 'RestartNotificationsAllowed2'; Want = 1 }
-    @{ Area = 'Edge';        Check = 'Diagnostic data off';                 Path = $edge; Name = 'DiagnosticData'; Want = 0 }
-    @{ Area = 'Edge';        Check = 'Personalization reporting off';       Path = $edge; Name = 'PersonalizationReportingEnabled'; Want = 0 }
-    @{ Area = 'Edge';        Check = 'Enhanced security mode (balanced)';   Path = $edge; Name = 'EnhanceSecurityMode'; Want = 1 }
-    @{ Area = 'Edge';        Check = 'Built-in password saving off';        Path = $edge; Name = 'PasswordManagerEnabled'; Want = 0 }
-    @{ Area = 'Edge';        Check = 'SmartScreen on';                      Path = $edge; Name = 'SmartScreenEnabled'; Want = 1 }
-    @{ Area = 'Edge';        Check = 'SmartScreen blocks unwanted apps';    Path = $edge; Name = 'SmartScreenPuaEnabled'; Want = 1 }
-    # system\hardening.ps1
-    @{ Area = 'Hardening';   Check = 'LLMNR name lookups off';              Path = $dns; Name = 'EnableMulticast'; Want = 0 }
-    @{ Area = 'Hardening';   Check = 'NetBIOS name lookups off';            Path = $dns; Name = 'EnableNetbios'; Want = 0 }
-    @{ Area = 'Hardening';   Check = 'AutoPlay off for all drive types';    Path = $xplr; Name = 'NoDriveTypeAutoRun'; Want = 255 }
-    @{ Area = 'Hardening';   Check = 'AutoRun off';                         Path = $xplr; Name = 'NoAutorun'; Want = 1 }
-    @{ Area = 'Hardening';   Check = 'No anonymous enumeration';            Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'; Name = 'RestrictAnonymous'; Want = 1 }
-    @{ Area = 'Hardening';   Check = 'Remote Assistance off';               Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance'; Name = 'fAllowToGetHelp'; Want = 0 }
-    # system\onedrive.ps1
-    @{ Area = 'OneDrive';    Check = 'OneDrive sync blocked';               Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive'; Name = 'DisableFileSyncNGSC'; Want = 1 }
-    # security\bitlocker.ps1 (written when Enable-BitLocker.ps1 runs)
-    @{ Area = 'Encryption';  Check = 'Cipher policy: system drive XTS-AES-256';     Path = $fve; Name = 'EncryptionMethodWithXtsOs';  Want = 7 }
-    @{ Area = 'Encryption';  Check = 'Cipher policy: internal drives XTS-AES-256';  Path = $fve; Name = 'EncryptionMethodWithXtsFdv'; Want = 7 }
-    @{ Area = 'Encryption';  Check = 'Cipher policy: removable drives XTS-AES-256'; Path = $fve; Name = 'EncryptionMethodWithXtsRdv'; Want = 7 }
-    # Windows defaults the kit relies on and does not set
-    @{ Area = 'Windows defaults'; Check = 'User Account Control on';        Path = $uac; Name = 'EnableLUA'; Want = 1 }
-    @{ Area = 'Windows defaults'; Check = 'Remote Desktop off';             Path = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'; Name = 'fDenyTSConnections'; Want = 1 }
-)
 
 $code = 0
 try {
@@ -162,16 +103,35 @@ try {
         @{ Value = "enabled=$($builtin.Enabled)"; Pass = (-not $builtin.Enabled) }
     }
 
-    # --- Everything in the table above ---
-    foreach ($e in $expected) {
+    # --- Every registry value in system\registry.psd1: what Install.ps1 and the BitLocker
+    #     scripts write, and what the kit relies on. A wanted value of $null must be absent. ---
+    foreach ($e in @(Get-KitRegistry)) {
         $have  = Get-RegValue $e.Path $e.Name
         $shown = if ($null -eq $have) { '(absent)' } else { "$have" }
-        $pass  = if ($null -eq $e.Want) { $null -eq $have } else { ($null -ne $have) -and ("$have" -eq "$($e.Want)") }
+        $pass  = if ($null -eq $e.Value) { $null -eq $have } else { ($null -ne $have) -and ("$have" -eq "$($e.Value)") }
         Add-Row $e.Area $e.Check "$($e.Name)=$shown" $pass
+    }
+    Add-Check 'Updates' 'Updates for other Microsoft products in effect' {
+        # Not just configured: Windows Update must list the Microsoft Update service as one it
+        # scans automatically. It registers the service at the first update check after the
+        # policy is set.
+        $services = (New-Object -ComObject Microsoft.Update.ServiceManager).Services
+        $mu = $services | Where-Object { "$($_.ServiceID)" -eq '7971f918-a847-4430-9279-4a52d1efe18d' } | Select-Object -First 1
+        if (-not $mu) { return @{ Value = 'Microsoft Update is not registered yet: check for updates once, then re-run'; Pass = $false } }
+        @{ Value = "Microsoft Update registered, scanned automatically=$($mu.IsRegisteredWithAU)"; Pass = [bool]$mu.IsRegisteredWithAU }
     }
     Add-Check 'Answer file' 'PowerShell scripts allowed (RemoteSigned)' {
         $policy = Get-ExecutionPolicy -Scope LocalMachine
         @{ Value = "$policy"; Pass = ("$policy" -eq 'RemoteSigned') }
+    }
+    Add-Check 'Answer file' "$SystemDrive\ not writable by standard users" {
+        # The answer file removes the two "Authenticated Users" entries from the drive's root,
+        # so only an administrator can create a folder directly under it.
+        $sid   = 'S-1-5-11'   # Authenticated Users
+        $rules = (Get-Acl -LiteralPath "$SystemDrive\").GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])
+        $found = @($rules | Where-Object { "$($_.IdentityReference)" -eq $sid -and "$($_.AccessControlType)" -eq 'Allow' })
+        if ($found.Count -eq 0) { return @{ Value = 'no Authenticated Users entry'; Pass = $true } }
+        @{ Value = "Authenticated Users: $(($found | ForEach-Object { "$($_.FileSystemRights)" }) -join '; ')"; Pass = $false }
     }
     Add-Row 'Machine' 'Computer name' "$env:COMPUTERNAME (want $HostName)" ($env:COMPUTERNAME -eq $HostName)
     $tz = (Get-TimeZone).Id
@@ -252,6 +212,7 @@ try {
     # Print area by area, in this order, whatever order the checks ran in.
     $areaOrder = 'Boot', 'Encryption', 'Accounts', 'Answer file', 'Machine', 'Policy', 'Updates', 'Edge',
                  'Hardening', 'OneDrive', 'Defender', 'Defender rules', 'Windows defaults', 'Games'
+    $areaOrder += @($rows | ForEach-Object { $_.Area } | Select-Object -Unique | Where-Object { $_ -notin $areaOrder })   # an area new to registry.psd1
     $ordered = foreach ($area in $areaOrder) { $rows | Where-Object { $_.Area -eq $area } }
     $ordered | Format-Table Area, Check,
         @{ Label = 'Status'; Expression = { if ($_.Pass) { 'PASS' } else { 'CHECK' } } },
